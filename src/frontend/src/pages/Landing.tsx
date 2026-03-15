@@ -127,10 +127,6 @@ export default function Landing() {
       : loginMode === "coordinator"
         ? "Coordinator Login"
         : "Volunteer Login";
-  const loginHint =
-    loginMode === "admin"
-      ? "Username: admin | Default password: Indran#12345"
-      : "";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[oklch(0.15_0.08_145)] to-[oklch(0.25_0.10_145)] flex flex-col items-center justify-center p-6">
@@ -225,9 +221,6 @@ export default function Landing() {
         <DialogContent data-ocid="login.dialog">
           <DialogHeader>
             <DialogTitle>{loginTitle}</DialogTitle>
-            {loginHint && (
-              <p className="text-sm text-muted-foreground">{loginHint}</p>
-            )}
           </DialogHeader>
           <div className="space-y-4">
             <div>
