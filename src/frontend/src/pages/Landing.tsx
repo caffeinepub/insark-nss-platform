@@ -89,6 +89,16 @@ export default function Landing() {
     setLoginMode(null);
   }
 
+  function handleResetAdminPassword() {
+    const confirmed = window.confirm(
+      "Reset admin password to default (Indran#12345)?",
+    );
+    if (confirmed) {
+      store.setAdminPassword("Indran#12345");
+      toast.success("Admin password reset to default.");
+    }
+  }
+
   function handleRegister() {
     if (
       !regFirst ||
@@ -251,6 +261,16 @@ export default function Landing() {
             >
               Login
             </Button>
+            {loginMode === "admin" && (
+              <button
+                type="button"
+                className="w-full text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                onClick={handleResetAdminPassword}
+                data-ocid="login.reset.password.button"
+              >
+                Forgot password? Reset to default
+              </button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
