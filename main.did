@@ -1,0 +1,161 @@
+type _CaffeineStorageRefillResult = 
+ record {
+   success: opt bool;
+   topped_up_amount: opt nat;
+ };
+type _CaffeineStorageRefillInformation = record {
+                                           proposed_top_up_amount: opt nat;};
+type _CaffeineStorageCreateCertificateResult = 
+ record {
+   blob_hash: text;
+   method: text;
+ };
+type Volunteer = 
+ record {
+   branch: text;
+   email: text;
+   firstName: text;
+   id: text;
+   lastName: text;
+   matricule: text;
+   passwordHash: text;
+   profilePicture: text;
+ };
+type Report = 
+ record {
+   description: text;
+   eventName: text;
+   feedback: text;
+   fileDataUrl: text;
+   id: text;
+   status: text;
+   submittedAt: int;
+   title: text;
+   volunteerId: text;
+   volunteerName: text;
+ };
+type Notification = 
+ record {
+   createdAt: int;
+   id: text;
+   isRead: bool;
+   message: text;
+   userId: text;
+   userRole: text;
+ };
+type GalleryPhoto = 
+ record {
+   eventId: text;
+   id: text;
+   imageDataUrl: text;
+   title: text;
+   uploadedAt: int;
+ };
+type FeedbackMessage = 
+ record {
+   content: text;
+   fromId: text;
+   fromRole: text;
+   id: text;
+   timestamp: int;
+   toId: text;
+   toRole: text;
+ };
+type Event = 
+ record {
+   date: text;
+   description: text;
+   eventType: text;
+   id: text;
+   name: text;
+ };
+type Coordinator = 
+ record {
+   email: text;
+   firstName: text;
+   grade: text;
+   id: text;
+   lastName: text;
+   passwordHash: text;
+   profilePicture: text;
+ };
+type CommunityMessage = 
+ record {
+   content: text;
+   fromId: text;
+   fromName: text;
+   fromRole: text;
+   id: text;
+   timestamp: int;
+ };
+type Certificate = 
+ record {
+   eventId: text;
+   fileDataUrl: text;
+   id: text;
+   title: text;
+   uploadedAt: int;
+   volunteerId: text;
+ };
+type AttendanceRecord = 
+ record {
+   lastSaved: int;
+   totalAttendance: nat;
+   volunteerId: text;
+ };
+type ActivityPointsRecord = 
+ record {
+   lastSaved: int;
+   storedPoints: nat;
+   volunteerId: text;
+ };
+service : {
+  _caffeineStorageBlobIsLive: (hash: blob) -> (bool) query;
+  _caffeineStorageBlobsToDelete: () -> (vec blob) query;
+  _caffeineStorageConfirmBlobDeletion: (blobs: vec blob) -> ();
+  _caffeineStorageCreateCertificate: (blobHash: text) ->
+   (_CaffeineStorageCreateCertificateResult);
+  _caffeineStorageRefillCashier: (refillInformation:
+   opt _CaffeineStorageRefillInformation) -> (_CaffeineStorageRefillResult);
+  _caffeineStorageUpdateGatewayPrincipals: () -> ();
+  addCertificate: (c: Certificate) -> ();
+  addCommunityMessage: (m: CommunityMessage) -> ();
+  addCoordinator: (c: Coordinator) -> ();
+  addEvent: (e: Event) -> ();
+  addFeedbackMessage: (m: FeedbackMessage) -> ();
+  addGalleryPhoto: (p: GalleryPhoto) -> ();
+  addNotification: (n: Notification) -> ();
+  addReport: (r: Report) -> ();
+  addVolunteer: (v: Volunteer) -> ();
+  adjustActivityPoints: (volunteerId: text, delta: int) -> ();
+  adjustAttendance: (volunteerId: text, delta: int) -> ();
+  deleteCertificate: (id: text) -> ();
+  deleteCommunityMessage: (id: text) -> ();
+  deleteCoordinator: (id: text) -> ();
+  deleteEvent: (id: text) -> ();
+  deleteFeedbackMessage: (id: text) -> ();
+  deleteGalleryPhoto: (id: text) -> ();
+  deleteReport: (id: text) -> ();
+  deleteVolunteer: (id: text) -> ();
+  getActivityPointsRecords: () -> (vec ActivityPointsRecord) query;
+  getAdminPasswordHash: () -> (text) query;
+  getAttendanceRecords: () -> (vec AttendanceRecord) query;
+  getCertificates: () -> (vec Certificate) query;
+  getCommunityMessages: () -> (vec CommunityMessage) query;
+  getCoordinators: () -> (vec Coordinator) query;
+  getEvents: () -> (vec Event) query;
+  getFeedbackMessages: () -> (vec FeedbackMessage) query;
+  getGalleryPhotos: () -> (vec GalleryPhoto) query;
+  getNotifications: () -> (vec Notification) query;
+  getReports: () -> (vec Report) query;
+  getVolunteers: () -> (vec Volunteer) query;
+  markAllNotificationsRead: (userId: text) -> ();
+  markNotificationRead: (id: text) -> ();
+  saveActivityPointsRecord: (r: ActivityPointsRecord) -> ();
+  saveAttendanceRecord: (r: AttendanceRecord) -> ();
+  setAdminPasswordHash: (hash: text) -> ();
+  updateCoordinator: (c: Coordinator) -> ();
+  updateEvent: (e: Event) -> ();
+  updateReport: (r: Report) -> ();
+  updateVolunteer: (v: Volunteer) -> ();
+}

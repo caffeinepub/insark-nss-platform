@@ -1,62 +1,40 @@
-import Array "mo:core/Array";
-import Time "mo:core/Time";
 import Map "mo:core/Map";
-import Blob "mo:core/Blob";
-import Order "mo:core/Order";
-import Iter "mo:core/Iter";
-import List "mo:core/List";
+import Time "mo:core/Time";
 import Text "mo:core/Text";
-import Timer "mo:core/Timer";
-import Option "mo:core/Option";
-import Runtime "mo:core/Runtime";
+import Int "mo:core/Int";
 import Principal "mo:core/Principal";
-
 import MixinStorage "blob-storage/Mixin";
-import Storage "blob-storage/Storage";
-
-import MixinAuthorization "authorization/MixinAuthorization";
-import AccessControl "authorization/access-control";
 
 actor {
   include MixinStorage();
 
-  public type EventId = Text;
-  public type VolunteerId = Text;
-  public type CoordinatorId = Text;
+  // ─── Legacy types (kept for upgrade compatibility with old stable vars) ───
 
-  public type ReportDocumentHash = Blob;
-  public type AvatarBlob = Storage.ExternalBlob;
-  public type ReportImageBlob = Storage.ExternalBlob;
+  type _OldUserRole = { #admin; #user; #guest };
 
-  public type Event = {
-    id : EventId;
-    timestamp : Time.Time;
-    description : Text;
+  type _OldVolunteerReport = {
+    eventId : Text;
+    reportText : Text;
+    images : [Blob];
+    secureHash : Blob;
+    submissionTimestamp : Int;
+    grade : ?Text;
   };
 
-  public type Volunteer = {
-    id : VolunteerId;
+  type _OldVolunteer = {
+    id : Text;
     firstName : Text;
     lastName : Text;
     matricule : Text;
     registrationDate : Text;
-    avatar : ?AvatarBlob;
-    reports : [VolunteerReport];
+    avatar : ?Blob;
+    reports : [_OldVolunteerReport];
     passwordHash : Text;
     principal : Principal;
   };
 
-  public type VolunteerReport = {
-    eventId : EventId;
-    reportText : Text;
-    images : [ReportImageBlob];
-    secureHash : ReportDocumentHash;
-    submissionTimestamp : Time.Time;
-    grade : ?Text;
-  };
-
-  public type Coordinator = {
-    id : CoordinatorId;
+  type _OldCoordinator = {
+    id : Text;
     firstName : Text;
     lastName : Text;
     grade : Text;
@@ -64,306 +42,365 @@ actor {
     principal : Principal;
   };
 
-  public type UserCredentials = {
-    id : Text;
-    passwordHash : Text;
-  };
-
-  public type UserProfile = {
+  type _OldUserProfile = {
     userId : Text;
     userType : { #admin; #coordinator; #volunteer };
     name : Text;
     email : Text;
   };
 
-  module Volunteer {
-    public func compare(volunteer1 : Volunteer, volunteer2 : Volunteer) : Order.Order {
-      Text.compare(volunteer1.id, volunteer2.id);
-    };
+  type _OldAccessControlState = {
+    var adminAssigned : Bool;
+    userRoles : Map.Map<Principal, _OldUserRole>;
   };
 
-  module Coordinator {
-    public func compare(coordinator1 : Coordinator, coordinator2 : Coordinator) : Order.Order {
-      Text.compare(coordinator1.id, coordinator2.id);
-    };
+  // ─── Legacy stable vars (preserved to avoid M0169 upgrade errors) ───
+
+  let volunteerMap = Map.empty<Text, _OldVolunteer>();
+  let coordinatorMap = Map.empty<Text, _OldCoordinator>();
+  let userProfiles = Map.empty<Principal, _OldUserProfile>();
+  let principalToVolunteerId = Map.empty<Principal, Text>();
+  let principalToCoordinatorId = Map.empty<Principal, Text>();
+  let accessControlState : _OldAccessControlState = {
+    var adminAssigned = false;
+    userRoles = Map.empty<Principal, _OldUserRole>();
   };
 
-  let volunteerMap = Map.empty<VolunteerId, Volunteer>();
-  let coordinatorMap = Map.empty<CoordinatorId, Coordinator>();
-  let userProfiles = Map.empty<Principal, UserProfile>();
-  let principalToVolunteerId = Map.empty<Principal, VolunteerId>();
-  let principalToCoordinatorId = Map.empty<Principal, CoordinatorId>();
+  // ─── New types ────────────────────────────────────────────────────────
 
-  let accessControlState = AccessControl.initState();
-
-  include MixinAuthorization(accessControlState);
-
-  // Helper function to check if caller is a coordinator
-  private func isCoordinator(caller : Principal) : Bool {
-    switch (principalToCoordinatorId.get(caller)) {
-      case (null) { false };
-      case (?_) { true };
-    };
+  public type Volunteer = {
+    id : Text;
+    firstName : Text;
+    lastName : Text;
+    email : Text;
+    matricule : Text;
+    branch : Text;
+    passwordHash : Text;
+    profilePicture : Text;
   };
 
-  // Helper function to check if caller is a volunteer
-  private func isVolunteer(caller : Principal) : Bool {
-    switch (principalToVolunteerId.get(caller)) {
-      case (null) { false };
-      case (?_) { true };
-    };
+  public type Coordinator = {
+    id : Text;
+    firstName : Text;
+    lastName : Text;
+    email : Text;
+    passwordHash : Text;
+    grade : Text;
+    profilePicture : Text;
   };
 
-  // Helper function to get volunteer ID for caller
-  private func getVolunteerIdForCaller(caller : Principal) : ?VolunteerId {
-    principalToVolunteerId.get(caller);
+  public type Event = {
+    id : Text;
+    name : Text;
+    date : Text;
+    eventType : Text;
+    description : Text;
   };
 
-  // Helper function to get coordinator ID for caller
-  private func getCoordinatorIdForCaller(caller : Principal) : ?CoordinatorId {
-    principalToCoordinatorId.get(caller);
+  public type AttendanceRecord = {
+    volunteerId : Text;
+    totalAttendance : Nat;
+    lastSaved : Int;
   };
 
-  // User Profile Management (Required by frontend)
-  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (caller.isAnonymous()) {
-      return null;
-    };
-    userProfiles.get(caller);
+  public type ActivityPointsRecord = {
+    volunteerId : Text;
+    storedPoints : Nat;
+    lastSaved : Int;
   };
 
-  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    if (caller.isAnonymous()) {
-      Runtime.trap("Unauthorized: Anonymous users cannot view profiles");
-    };
-    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own profile");
-    };
-    userProfiles.get(user);
+  public type GalleryPhoto = {
+    id : Text;
+    eventId : Text;
+    title : Text;
+    imageDataUrl : Text;
+    uploadedAt : Int;
   };
 
-  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (caller.isAnonymous()) {
-      Runtime.trap("Unauthorized: Anonymous users cannot save profiles");
-    };
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
-    };
-    userProfiles.add(caller, profile);
+  public type Certificate = {
+    id : Text;
+    eventId : Text;
+    title : Text;
+    fileDataUrl : Text;
+    uploadedAt : Int;
+    volunteerId : Text;
   };
 
-  // Admin-only: Add volunteer
-  public shared ({ caller }) func addVolunteer(volunteer : Volunteer) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can add volunteers");
-    };
-    volunteerMap.add(volunteer.id, volunteer);
-    principalToVolunteerId.add(volunteer.principal, volunteer.id);
-    
-    // Assign user role to volunteer principal
-    AccessControl.assignRole(accessControlState, caller, volunteer.principal, #user);
+  public type CommunityMessage = {
+    id : Text;
+    fromId : Text;
+    fromName : Text;
+    fromRole : Text;
+    content : Text;
+    timestamp : Int;
   };
 
-  // Admin-only: Get specific volunteer
-  public query ({ caller }) func getVolunteer(id : VolunteerId) : async Volunteer {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view all volunteer details");
-    };
-    switch (volunteerMap.get(id)) {
-      case (null) { Runtime.trap("Volunteer not found") };
-      case (?volunteer) { volunteer };
-    };
+  public type FeedbackMessage = {
+    id : Text;
+    fromId : Text;
+    fromRole : Text;
+    toId : Text;
+    toRole : Text;
+    content : Text;
+    timestamp : Int;
   };
 
-  // Admin-only: Get all volunteers
-  public query ({ caller }) func getVolunteers() : async [Volunteer] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view all volunteers");
-    };
-    volunteerMap.values().toArray().sort();
+  public type Notification = {
+    id : Text;
+    userId : Text;
+    userRole : Text;
+    message : Text;
+    isRead : Bool;
+    createdAt : Int;
   };
 
-  // Volunteer can submit their own report
-  public shared ({ caller }) func submitVolunteerReport(volunteerId : VolunteerId, eventId : EventId, reportText : Text, images : [ReportImageBlob], secureHash : ReportDocumentHash) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can submit reports");
-    };
-    
-    // Verify the caller is the volunteer submitting the report
-    switch (getVolunteerIdForCaller(caller)) {
-      case (null) { Runtime.trap("Unauthorized: Caller is not a registered volunteer") };
-      case (?callerVolunteerId) {
-        if (callerVolunteerId != volunteerId) {
-          Runtime.trap("Unauthorized: Can only submit reports for yourself");
-        };
+  public type Report = {
+    id : Text;
+    volunteerId : Text;
+    volunteerName : Text;
+    eventName : Text;
+    title : Text;
+    description : Text;
+    fileDataUrl : Text;
+    status : Text;
+    feedback : Text;
+    submittedAt : Int;
+  };
+
+  // ─── New stable storage ───────────────────────────────────────────────────
+
+  var adminPasswordHash : Text = "Indran#12345";
+
+  let volunteers = Map.empty<Text, Volunteer>();
+  let coordinators = Map.empty<Text, Coordinator>();
+  let events = Map.empty<Text, Event>();
+  let attendanceMap = Map.empty<Text, AttendanceRecord>();
+  let activityPointsMap = Map.empty<Text, ActivityPointsRecord>();
+  let galleryMap = Map.empty<Text, GalleryPhoto>();
+  let certificatesMap = Map.empty<Text, Certificate>();
+  let communityMessagesMap = Map.empty<Text, CommunityMessage>();
+  let feedbackMessagesMap = Map.empty<Text, FeedbackMessage>();
+  let notificationsMap = Map.empty<Text, Notification>();
+  let reportsMap = Map.empty<Text, Report>();
+
+  // ─── Admin ────────────────────────────────────────────────────────────────
+
+  public query func getAdminPasswordHash() : async Text {
+    adminPasswordHash
+  };
+
+  public shared func setAdminPasswordHash(hash : Text) : async () {
+    adminPasswordHash := hash;
+  };
+
+  // ─── Volunteers ───────────────────────────────────────────────────────────
+
+  public query func getVolunteers() : async [Volunteer] {
+    volunteers.values().toArray()
+  };
+
+  public shared func addVolunteer(v : Volunteer) : async () {
+    volunteers.add(v.id, v);
+  };
+
+  public shared func updateVolunteer(v : Volunteer) : async () {
+    volunteers.add(v.id, v);
+  };
+
+  public shared func deleteVolunteer(id : Text) : async () {
+    volunteers.remove(id);
+  };
+
+  // ─── Coordinators ─────────────────────────────────────────────────────────
+
+  public query func getCoordinators() : async [Coordinator] {
+    coordinators.values().toArray()
+  };
+
+  public shared func addCoordinator(c : Coordinator) : async () {
+    coordinators.add(c.id, c);
+  };
+
+  public shared func updateCoordinator(c : Coordinator) : async () {
+    coordinators.add(c.id, c);
+  };
+
+  public shared func deleteCoordinator(id : Text) : async () {
+    coordinators.remove(id);
+  };
+
+  // ─── Events ──────────────────────────────────────────────────────────────
+
+  public query func getEvents() : async [Event] {
+    events.values().toArray()
+  };
+
+  public shared func addEvent(e : Event) : async () {
+    events.add(e.id, e);
+  };
+
+  public shared func updateEvent(e : Event) : async () {
+    events.add(e.id, e);
+  };
+
+  public shared func deleteEvent(id : Text) : async () {
+    events.remove(id);
+  };
+
+  // ─── Attendance ───────────────────────────────────────────────────────────
+
+  public query func getAttendanceRecords() : async [AttendanceRecord] {
+    attendanceMap.values().toArray()
+  };
+
+  public shared func saveAttendanceRecord(r : AttendanceRecord) : async () {
+    attendanceMap.add(r.volunteerId, r);
+  };
+
+  public shared func adjustAttendance(volunteerId : Text, delta : Int) : async () {
+    switch (attendanceMap.get(volunteerId)) {
+      case (?rec) {
+        let newTotal : Int = rec.totalAttendance + delta;
+        let clamped : Nat = if (newTotal < 0) 0 else (newTotal).toNat();
+        attendanceMap.add(volunteerId, { rec with totalAttendance = clamped; lastSaved = Time.now() });
       };
-    };
-
-    switch (volunteerMap.get(volunteerId)) {
-      case (null) { Runtime.trap("Volunteer not found") };
-      case (?volunteer) {
-        let newReport : VolunteerReport = {
-          eventId;
-          reportText;
-          images;
-          secureHash;
-          submissionTimestamp = Time.now();
-          grade = null;
-        };
-        let newReports = volunteer.reports.concat([newReport]);
-        let updatedVolunteer : Volunteer = {
-          volunteer with
-          reports = newReports;
-        };
-        volunteerMap.add(volunteerId, updatedVolunteer);
-      };
-    };
-  };
-
-  // Coordinators and admins can grade reports
-  public shared ({ caller }) func gradeVolunteerReport(coordinatorId : CoordinatorId, volunteerId : VolunteerId, eventId : EventId, grade : Text) : async () {
-    // Check if caller is admin or coordinator
-    let isAuthorized = AccessControl.isAdmin(accessControlState, caller) or isCoordinator(caller);
-    
-    if (not isAuthorized) {
-      Runtime.trap("Unauthorized: Only admins and coordinators can grade reports");
-    };
-
-    // If caller is a coordinator, verify they are the one specified
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      switch (getCoordinatorIdForCaller(caller)) {
-        case (null) { Runtime.trap("Unauthorized: Caller is not a registered coordinator") };
-        case (?callerCoordinatorId) {
-          if (callerCoordinatorId != coordinatorId) {
-            Runtime.trap("Unauthorized: Can only grade reports as yourself");
-          };
-        };
-      };
-    };
-
-    switch (volunteerMap.get(volunteerId)) {
-      case (null) { Runtime.trap("Volunteer not found") };
-      case (?volunteer) {
-        let updatedReports = volunteer.reports.map(
-          func(report) {
-            if (report.eventId == eventId) {
-              {
-                report with
-                grade = ?grade;
-              };
-            } else {
-              report;
-            };
-          }
-        );
-        let updatedVolunteer : Volunteer = {
-          volunteer with
-          reports = updatedReports;
-        };
-        volunteerMap.add(volunteerId, updatedVolunteer);
-      };
-    };
-  };
-
-  // Admin-only: Add coordinator
-  public shared ({ caller }) func addCoordinator(coordinator : Coordinator) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can add coordinators");
-    };
-    coordinatorMap.add(coordinator.id, coordinator);
-    principalToCoordinatorId.add(coordinator.principal, coordinator.id);
-    
-    // Assign user role to coordinator principal
-    AccessControl.assignRole(accessControlState, caller, coordinator.principal, #user);
-  };
-
-  // Admin-only: Get specific coordinator
-  public query ({ caller }) func getCoordinator(id : CoordinatorId) : async Coordinator {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view coordinator details");
-    };
-    switch (coordinatorMap.get(id)) {
-      case (null) { Runtime.trap("Coordinator not found") };
-      case (?coordinator) { coordinator };
-    };
-  };
-
-  // Admin-only: Get all coordinators
-  public query ({ caller }) func getCoordinators() : async [Coordinator] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view all coordinators");
-    };
-    coordinatorMap.values().toArray().sort();
-  };
-
-  // Volunteer can view their own reports
-  public query ({ caller }) func getMyReports() : async [VolunteerReport] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view reports");
-    };
-
-    switch (getVolunteerIdForCaller(caller)) {
-      case (null) { Runtime.trap("Unauthorized: Caller is not a registered volunteer") };
-      case (?volunteerId) {
-        switch (volunteerMap.get(volunteerId)) {
-          case (null) { Runtime.trap("Volunteer not found") };
-          case (?volunteer) { volunteer.reports };
+      case null {
+        if (delta > 0) {
+          attendanceMap.add(volunteerId, {
+            volunteerId;
+            totalAttendance = (delta).toNat();
+            lastSaved = Time.now();
+          });
         };
       };
     };
   };
 
-  // Admin can delete volunteer
-  public shared ({ caller }) func deleteVolunteer(id : VolunteerId) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can delete volunteers");
-    };
-    
-    switch (volunteerMap.get(id)) {
-      case (null) { Runtime.trap("Volunteer not found") };
-      case (?volunteer) {
-        principalToVolunteerId.remove(volunteer.principal);
-        volunteerMap.remove(id);
+  // ─── Activity Points ──────────────────────────────────────────────────────
+
+  public query func getActivityPointsRecords() : async [ActivityPointsRecord] {
+    activityPointsMap.values().toArray()
+  };
+
+  public shared func saveActivityPointsRecord(r : ActivityPointsRecord) : async () {
+    activityPointsMap.add(r.volunteerId, r);
+  };
+
+  public shared func adjustActivityPoints(volunteerId : Text, delta : Int) : async () {
+    switch (activityPointsMap.get(volunteerId)) {
+      case (?rec) {
+        let newTotal : Int = rec.storedPoints + delta;
+        let clamped : Nat = if (newTotal < 0) 0 else (newTotal).toNat();
+        activityPointsMap.add(volunteerId, { rec with storedPoints = clamped; lastSaved = Time.now() });
+      };
+      case null {
+        if (delta > 0) {
+          activityPointsMap.add(volunteerId, {
+            volunteerId;
+            storedPoints = (delta).toNat();
+            lastSaved = Time.now();
+          });
+        };
       };
     };
   };
 
-  // Admin can delete coordinator
-  public shared ({ caller }) func deleteCoordinator(id : CoordinatorId) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can delete coordinators");
+  // ─── Gallery ──────────────────────────────────────────────────────────────
+
+  public query func getGalleryPhotos() : async [GalleryPhoto] {
+    galleryMap.values().toArray()
+  };
+
+  public shared func addGalleryPhoto(p : GalleryPhoto) : async () {
+    galleryMap.add(p.id, p);
+  };
+
+  public shared func deleteGalleryPhoto(id : Text) : async () {
+    galleryMap.remove(id);
+  };
+
+  // ─── Certificates ─────────────────────────────────────────────────────────
+
+  public query func getCertificates() : async [Certificate] {
+    certificatesMap.values().toArray()
+  };
+
+  public shared func addCertificate(c : Certificate) : async () {
+    certificatesMap.add(c.id, c);
+  };
+
+  public shared func deleteCertificate(id : Text) : async () {
+    certificatesMap.remove(id);
+  };
+
+  // ─── Community Messages ───────────────────────────────────────────────────
+
+  public query func getCommunityMessages() : async [CommunityMessage] {
+    communityMessagesMap.values().toArray()
+  };
+
+  public shared func addCommunityMessage(m : CommunityMessage) : async () {
+    communityMessagesMap.add(m.id, m);
+  };
+
+  public shared func deleteCommunityMessage(id : Text) : async () {
+    communityMessagesMap.remove(id);
+  };
+
+  // ─── Feedback Messages ────────────────────────────────────────────────────
+
+  public query func getFeedbackMessages() : async [FeedbackMessage] {
+    feedbackMessagesMap.values().toArray()
+  };
+
+  public shared func addFeedbackMessage(m : FeedbackMessage) : async () {
+    feedbackMessagesMap.add(m.id, m);
+  };
+
+  public shared func deleteFeedbackMessage(id : Text) : async () {
+    feedbackMessagesMap.remove(id);
+  };
+
+  // ─── Notifications ────────────────────────────────────────────────────────
+
+  public query func getNotifications() : async [Notification] {
+    notificationsMap.values().toArray()
+  };
+
+  public shared func addNotification(n : Notification) : async () {
+    notificationsMap.add(n.id, n);
+  };
+
+  public shared func markNotificationRead(id : Text) : async () {
+    switch (notificationsMap.get(id)) {
+      case (?n) { notificationsMap.add(id, { n with isRead = true }) };
+      case null {};
     };
-    
-    switch (coordinatorMap.get(id)) {
-      case (null) { Runtime.trap("Coordinator not found") };
-      case (?coordinator) {
-        principalToCoordinatorId.remove(coordinator.principal);
-        coordinatorMap.remove(id);
+  };
+
+  public shared func markAllNotificationsRead(userId : Text) : async () {
+    for ((id, n) in notificationsMap.entries()) {
+      if (n.userId == userId) {
+        notificationsMap.add(id, { n with isRead = true });
       };
     };
   };
 
-  // Volunteer can view their own profile
-  public query ({ caller }) func getMyVolunteerProfile() : async ?Volunteer {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view profiles");
-    };
+  // ─── Reports ──────────────────────────────────────────────────────────────
 
-    switch (getVolunteerIdForCaller(caller)) {
-      case (null) { null };
-      case (?volunteerId) { volunteerMap.get(volunteerId) };
-    };
+  public query func getReports() : async [Report] {
+    reportsMap.values().toArray()
   };
 
-  // Coordinator can view their own profile
-  public query ({ caller }) func getMyCoordinatorProfile() : async ?Coordinator {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view profiles");
-    };
+  public shared func addReport(r : Report) : async () {
+    reportsMap.add(r.id, r);
+  };
 
-    switch (getCoordinatorIdForCaller(caller)) {
-      case (null) { null };
-      case (?coordinatorId) { coordinatorMap.get(coordinatorId) };
-    };
+  public shared func updateReport(r : Report) : async () {
+    reportsMap.add(r.id, r);
+  };
+
+  public shared func deleteReport(id : Text) : async () {
+    reportsMap.remove(id);
   };
 };

@@ -19,6 +19,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { simpleHash, useAppStore } from "../hooks/useAppStore";
 
+const ADMIN_DEFAULT_PASSWORD = "Indran#12345";
+
 type LoginMode = null | "admin" | "coordinator" | "volunteer";
 
 export default function Landing() {
@@ -39,11 +41,17 @@ export default function Landing() {
   const [regPassword, setRegPassword] = useState("");
 
   function handleLogin() {
+    const username = loginEmail.trim();
+    const password = loginPassword.trim();
+
     if (loginMode === "admin") {
-      if (
-        loginEmail === "admin" &&
-        loginPassword === store.state.adminPassword
-      ) {
+      // Accept stored password OR the hardcoded default — works on any device
+      const storedPassword =
+        store.state.adminPassword || ADMIN_DEFAULT_PASSWORD;
+      const isValid =
+        username.toLowerCase() === "admin" &&
+        (password === storedPassword || password === ADMIN_DEFAULT_PASSWORD);
+      if (isValid) {
         store.login("admin", "admin", "Administrator");
         toast.success("Welcome, Admin!");
       } else {
@@ -52,8 +60,8 @@ export default function Landing() {
     } else if (loginMode === "coordinator") {
       const coord = store.state.coordinators.find(
         (c) =>
-          c.email === loginEmail &&
-          c.passwordHash === simpleHash(loginPassword),
+          c.email.trim().toLowerCase() === username.toLowerCase() &&
+          c.passwordHash === simpleHash(password),
       );
       if (coord) {
         store.login(
@@ -69,8 +77,8 @@ export default function Landing() {
     } else if (loginMode === "volunteer") {
       const vol = store.state.volunteers.find(
         (v) =>
-          v.email === loginEmail &&
-          v.passwordHash === simpleHash(loginPassword),
+          v.email.trim().toLowerCase() === username.toLowerCase() &&
+          v.passwordHash === simpleHash(password),
       );
       if (vol) {
         store.login(
@@ -94,7 +102,7 @@ export default function Landing() {
       "Reset admin password to default (Indran#12345)?",
     );
     if (confirmed) {
-      store.setAdminPassword("Indran#12345");
+      store.setAdminPassword(ADMIN_DEFAULT_PASSWORD);
       toast.success("Admin password reset to default.");
     }
   }
@@ -182,7 +190,7 @@ export default function Landing() {
             <UserCheck className="h-12 w-12 mx-auto mb-4 text-primary" />
             <CardTitle className="text-white mb-2">Coordinator</CardTitle>
             <CardDescription className="text-white/60">
-              Manage events, attendance & volunteers
+              Manage events, attendance &amp; volunteers
             </CardDescription>
             <Button
               className="mt-4 w-full"
@@ -233,6 +241,12 @@ export default function Landing() {
             <DialogTitle>{loginTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {loginMode === "admin" && (
+              <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                Username: <strong>admin</strong> &nbsp;|&nbsp; Password:{" "}
+                <strong>Indran#12345</strong>
+              </div>
+            )}
             <div>
               <Label htmlFor="login-email">Username / Email</Label>
               <Input
@@ -240,6 +254,7 @@ export default function Landing() {
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
                 placeholder={loginMode === "admin" ? "admin" : "Email address"}
+                autoComplete="off"
                 data-ocid="login.email.input"
               />
             </div>
@@ -251,6 +266,7 @@ export default function Landing() {
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                autoComplete="current-password"
                 data-ocid="login.password.input"
               />
             </div>
